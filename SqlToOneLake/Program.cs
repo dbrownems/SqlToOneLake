@@ -1,6 +1,3 @@
-﻿
-
-//connect to sql server
 using Azure.Identity;
 using Azure.Storage.Files.DataLake;
 using Azure.Storage.Files.DataLake.Models;
