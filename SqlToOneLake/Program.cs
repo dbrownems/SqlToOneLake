@@ -20,13 +20,15 @@ cross join generate_series(0,150000000/60368) s
 
 "; 
 var endpopint = $"https://msit-onelake.dfs.fabric.microsoft.com/";
-var folder = "/Files/test";
+var workspaceName = "dbrowne_Trident";
+var folder = "/LH.lakehouse/Files/test";
+var filename = "test.parquet";
 var rowGroupSize = 1000000;
 
 var dataLakeServiceClient = GetDataLakeServiceClient(endpopint);
-var dataLakeFileSystemClient = dataLakeServiceClient.GetFileSystemClient("dbrowne_Trident");
-var dirClient = dataLakeFileSystemClient.GetDirectoryClient("/LH.lakehouse/Files/test");
-var fileClient = dirClient.GetFileClient("test.parquet");
+var dataLakeFileSystemClient = dataLakeServiceClient.GetFileSystemClient(workspaceName);
+var dirClient = dataLakeFileSystemClient.GetDirectoryClient(folder);
+var fileClient = dirClient.GetFileClient(filename);
 using var file = fileClient.OpenWrite(true);
 
 
