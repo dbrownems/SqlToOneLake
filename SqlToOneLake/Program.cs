@@ -1,4 +1,4 @@
-﻿using Azure.Identity;
+using Azure.Identity;
 using Azure.Storage.Files.DataLake;
 using Azure.Storage.Files.DataLake.Models;
 using Microsoft.Data.SqlClient;
@@ -132,6 +132,21 @@ static async Task WriteDatareaderToParquet(SqlDataReader rdr, Stream file,  int 
     }
     writer.Dispose();
 
-    file.Flush();
-    file.Close();
+file.Flush();
+file.Close();
+Console.WriteLine($"Complete {DateTime.Now}");
+
+
+
+
+
+
+
+DataLakeServiceClient GetDataLakeServiceClient(string endpoint)
+{
+    DataLakeServiceClient dataLakeServiceClient = new DataLakeServiceClient(
+        new Uri(endpoint),
+        new DefaultAzureCredential(new DefaultAzureCredentialOptions() {  ExcludeInteractiveBrowserCredential=false}));
+
+    return dataLakeServiceClient;
 }
