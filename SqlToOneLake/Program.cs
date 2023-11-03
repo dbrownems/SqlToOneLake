@@ -1,11 +1,10 @@
 using Azure.Identity;
 using Azure.Storage.Files.DataLake;
-using Azure.Storage.Files.DataLake.Models;
 using Microsoft.Data.SqlClient;
 using Parquet;
 using Parquet.Data;
-using Parquet.Rows;
 using Parquet.Schema;
+
 
 Console.WriteLine($"Starting {DateTime.Now}");
 var constr = "Data Source=.;Initial Catalog=AdventureWorksDW2019;Integrated Security=True;TrustServerCertificate=true";
@@ -51,27 +50,35 @@ Stream CreateOneLakeFile(string endpopint, string workspaceName, string folder, 
     var dataLakeFileSystemClient = dataLakeServiceClient.GetFileSystemClient(workspaceName);
     var dirClient = dataLakeFileSystemClient.GetDirectoryClient(folder);
     var fileClient = dirClient.GetFileClient(filename);
-    var file = fileClient.OpenWrite(true);
+    var file = fileClient.OpenWrite(overwrite:true);
     return file;
 }
 
-static async Task WriteDatareaderToParquet(SqlDataReader rdr, Stream file,  int rowGroupSize)
+static async Task WriteDatareaderToParquet(System.Data.IDataReader rdr, Stream file,  int rowGroupSize)
 {
     var fields = new List<DataField>();
-    var columns = new List<DataColumn>();
     var schemaTable = rdr.GetSchemaTable();
+    if (schemaTable != null)
+    {
+        schemaTable.DefaultView.Sort = "ColumnOrdinal ASC";
+        schemaTable = schemaTable.DefaultView.ToTable();
+    }
 
     for (int i = 0; i < rdr.FieldCount; i++)
     {
         var field = rdr.GetName(i);
         var type = rdr.GetFieldType(i);
 
-        var nullable = (bool)schemaTable.Rows[i]["AllowDBNull"];
+        var nullable = schemaTable == null ? true : (bool)schemaTable.Rows[i]["AllowDBNull"];
 
         var df = new DataField(field, type, isNullable: nullable);
         fields.Add(df);
     }
+
+    
     var schema = new ParquetSchema(fields);
+
+    var columns = new List<DataColumn>();
     foreach (var df in fields)
     {
         var dc = new DataColumn(df, Array.CreateInstance(df.ClrNullableIfHasNullsType, rowGroupSize));
@@ -132,21 +139,7 @@ static async Task WriteDatareaderToParquet(SqlDataReader rdr, Stream file,  int 
     }
     writer.Dispose();
 
-file.Flush();
-file.Close();
-Console.WriteLine($"Complete {DateTime.Now}");
-
-
-
-
-
-
-
-DataLakeServiceClient GetDataLakeServiceClient(string endpoint)
-{
-    DataLakeServiceClient dataLakeServiceClient = new DataLakeServiceClient(
-        new Uri(endpoint),
-        new DefaultAzureCredential(new DefaultAzureCredentialOptions() {  ExcludeInteractiveBrowserCredential=false}));
-
-    return dataLakeServiceClient;
+    file.Flush();
+    file.Close();
+    
 }
