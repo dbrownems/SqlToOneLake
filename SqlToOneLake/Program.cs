@@ -1,4 +1,5 @@
 using Azure.Identity;
+using Azure.Storage;
 using Azure.Storage.Files.DataLake;
 using Azure.Storage.Files.DataLake.Models;
 using Microsoft.Data.SqlClient;
@@ -20,20 +21,12 @@ var endpopint = $"https://msit-onelake.dfs.fabric.microsoft.com/";
 var workspaceName = "dbrowne_Trident";
 var folder = "/LH.lakehouse/Files/test";
 var filename = "test.5m.parquet";
-
-//endpopint = "https://dbrownedlwc.dfs.core.windows.net/";
-//workspaceName = "datalake";
-//folder = "/";
-//filename = "test.5m.parquet";
-
+var tempFolder = @"d:\temp\";
 var rowGroupSize = 500000;
 
-var useTempFile = true;
 
-var tfn = Path.GetTempFileName();
-using var tempFile = new FileStream(tfn, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 1024 * 64);//, FileOptions.DeleteOnClose);
-
-//var createFileTask = CreateOneLakeFileAsync(endpopint, workspaceName, folder, filename);
+var tfn = tempFolder!=null? Path.Combine(tempFolder, Path.GetRandomFileName()): Path.GetTempFileName();
+using var tempFile = new FileStream(tfn, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 1024 * 256, FileOptions.DeleteOnClose);
 
 using var con = new SqlConnection(constr);
 con.Open();
@@ -43,44 +36,25 @@ using var rdr = cmd.ExecuteReader();
 
 await WriteDatareaderToParquet(rdr, tempFile, rowGroupSize);
 
-Console.WriteLine($"Copying {tempFile.Position/1024/1024}MB to OneLake file {DateTime.Now}");
-
-tempFile.Position = 0;
 var fc = CreateOneLakeFileClient(endpopint, workspaceName, folder, filename);
-tempFile.Close();
 
-try
-{
-    await fc.UploadAsync(tfn, overwrite: true);
-}
-finally
-{
-    File.Delete(tfn);
-}
+await fc.DeleteIfExistsAsync();
 
-//var buf = new byte[1024 * 1024 * 4];
-//while (true)
-//{
-//    var br = tempFile.Read(buf, 0, buf.Length);
-//    if (br == 0)
-//        break;
-//    file.Write(buf, 0, buf.Length);
-//    Console.WriteLine($"Copied {tempFile.Position / 1024 / 1024}MB to OneLake file {DateTime.Now}");
-//}
-
+Console.WriteLine($"Copying {tempFile.Position / 1024 / 1024}MB to OneLake file {DateTime.Now}");
+var opts = new DataLakeFileUploadOptions() { TransferOptions = new StorageTransferOptions { MaximumConcurrency = 8 } };
+tempFile.Position = 0;
+await fc.UploadAsync(tempFile, options: opts);
 Console.WriteLine($"Copied {tempFile.Position / 1024 / 1024}MB to OneLake file {DateTime.Now}");
 
 
 Console.WriteLine($"Complete {DateTime.Now}");
 
 
-
-
 DataLakeServiceClient GetDataLakeServiceClient(string endpoint)
 {
     DataLakeServiceClient dataLakeServiceClient = new DataLakeServiceClient(
         new Uri(endpoint),
-        new DefaultAzureCredential(new DefaultAzureCredentialOptions() { ExcludeInteractiveBrowserCredential = false }));
+        new DefaultAzureCredential(new DefaultAzureCredentialOptions() { ExcludeManagedIdentityCredential = true }));
 
     return dataLakeServiceClient;
 }
@@ -93,12 +67,6 @@ DataLakeFileClient CreateOneLakeFileClient(string endpopint, string workspaceNam
     var dirClient = dataLakeFileSystemClient.GetDirectoryClient(folder);
     var fileClient = dirClient.GetFileClient(filename);
     return fileClient;
-}
-async Task<Stream> CreateOneLakeFileAsync(string endpopint, string workspaceName, string folder, string filename)
-{
-    var fileClient = CreateOneLakeFileClient(endpopint, workspaceName, folder, filename);   
-    var file = await fileClient.OpenWriteAsync(overwrite:true);
-    return file;
 }
 
 static async Task WriteDatareaderToParquet(System.Data.IDataReader rdr, Stream file,  int rowGroupSize)
