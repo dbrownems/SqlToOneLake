@@ -26,19 +26,19 @@ var rowGroupSize = 500000;
 
 
 var tfn = tempFolder!=null? Path.Combine(tempFolder, Path.GetRandomFileName()): Path.GetTempFileName();
-using var tempFile = new FileStream(tfn, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 1024 * 256, FileOptions.DeleteOnClose);
+using var tempFile = new FileStream(tfn, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1024 * 256, FileOptions.DeleteOnClose);
 
 using var con = new SqlConnection(constr);
 con.Open();
 var cmd = new SqlCommand(sql, con);
 using var rdr = cmd.ExecuteReader();
 
+var fc = CreateOneLakeFileClient(endpopint, workspaceName, folder, filename);
+var deleteIfExistsTask = fc.DeleteIfExistsAsync(); 
 
 await WriteDatareaderToParquet(rdr, tempFile, rowGroupSize);
 
-var fc = CreateOneLakeFileClient(endpopint, workspaceName, folder, filename);
-
-await fc.DeleteIfExistsAsync();
+await deleteIfExistsTask;
 
 Console.WriteLine($"Copying {tempFile.Position / 1024 / 1024}MB to OneLake file {DateTime.Now}");
 
@@ -121,14 +121,14 @@ static async Task WriteDatareaderToParquet(System.Data.IDataReader rdr, Stream f
         if (rc % rowGroupSize == 0)
         {
 
-            Console.WriteLine($"Writing {rc} rows. {DateTime.Now}");
+            Console.WriteLine($"Writing {rc} row rowgroup. {DateTime.Now}");
             using var rgw = writer.CreateRowGroup();
             foreach (var c in columns)
             {
                 //Console.WriteLine($"Writing {c.Field.Name}");
                 await rgw.WriteColumnAsync(c);
             }
-            Console.WriteLine($"Completed {rc} rows. {DateTime.Now}");
+            //Console.WriteLine($"Completed {rc} row rowgrouup. {DateTime.Now}");
             rc = 0;
         }
     }
@@ -150,7 +150,7 @@ static async Task WriteDatareaderToParquet(System.Data.IDataReader rdr, Stream f
         using var rgw = writer.CreateRowGroup();
         foreach (var c in columns)
         {
-            Console.WriteLine($"Writing {c.Field.Name}");
+            //Console.WriteLine($"Writing {c.Field.Name}");
             await rgw.WriteColumnAsync(c);
         }
     }
@@ -162,8 +162,15 @@ static async Task WriteDatareaderToParquet(System.Data.IDataReader rdr, Stream f
 
 class ProgressHandler : IProgress<long>
 {
+    long lastValReportedMB = 0;
     public void Report(long value)
     {
-        Console.WriteLine($"Copied {value / 1024 / 1024}MB to OneLake file {DateTime.Now}");
+        if (value / 1024 / 1024 >= lastValReportedMB+4)
+        {
+            Console.WriteLine($"Copied {value / 1024 / 1024}MB to OneLake file {DateTime.Now}");
+            lastValReportedMB = value / 1024 / 1024;
+        }
+        
+
     }
 }
