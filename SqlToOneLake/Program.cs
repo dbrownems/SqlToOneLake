@@ -1,10 +1,12 @@
 using Azure.Identity;
+using Azure.Storage;
 using Azure.Storage.Files.DataLake;
+using Azure.Storage.Files.DataLake.Models;
 using Microsoft.Data.SqlClient;
 using Parquet;
 using Parquet.Data;
 using Parquet.Schema;
-
+using System.Net;
 
 Console.WriteLine($"Starting {DateTime.Now}");
 var constr = "Data Source=.;Initial Catalog=AdventureWorksDW2019;Integrated Security=True;TrustServerCertificate=true";
@@ -12,46 +14,59 @@ var sql = @"
 
 select f.*
 from FactInternetSales f
-cross join generate_series(0,150000000/60368) s
+cross join generate_series(0,5000000/60368) s
 
 ";
 var endpopint = $"https://msit-onelake.dfs.fabric.microsoft.com/";
 var workspaceName = "dbrowne_Trident";
 var folder = "/LH.lakehouse/Files/test";
-var filename = "test.parquet";
-var rowGroupSize = 1000000;
+var filename = "test.5m.parquet";
+var tempFolder = @"d:\temp\";
+var rowGroupSize = 500000;
 
-using Stream file = CreateOneLakeFile(endpopint, workspaceName, folder, filename);
+
+var tfn = tempFolder!=null? Path.Combine(tempFolder, Path.GetRandomFileName()): Path.GetTempFileName();
+using var tempFile = new FileStream(tfn, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 1024 * 256, FileOptions.DeleteOnClose);
 
 using var con = new SqlConnection(constr);
 con.Open();
 var cmd = new SqlCommand(sql, con);
 using var rdr = cmd.ExecuteReader();
 
-await WriteDatareaderToParquet(rdr, file, rowGroupSize);
+
+await WriteDatareaderToParquet(rdr, tempFile, rowGroupSize);
+
+var fc = CreateOneLakeFileClient(endpopint, workspaceName, folder, filename);
+
+await fc.DeleteIfExistsAsync();
+
+Console.WriteLine($"Copying {tempFile.Position / 1024 / 1024}MB to OneLake file {DateTime.Now}");
+var opts = new DataLakeFileUploadOptions() { TransferOptions = new StorageTransferOptions { MaximumConcurrency = 8 } };
+tempFile.Position = 0;
+await fc.UploadAsync(tempFile, options: opts);
+Console.WriteLine($"Copied {tempFile.Position / 1024 / 1024}MB to OneLake file {DateTime.Now}");
+
 
 Console.WriteLine($"Complete {DateTime.Now}");
-
-
 
 
 DataLakeServiceClient GetDataLakeServiceClient(string endpoint)
 {
     DataLakeServiceClient dataLakeServiceClient = new DataLakeServiceClient(
         new Uri(endpoint),
-        new DefaultAzureCredential(new DefaultAzureCredentialOptions() { ExcludeInteractiveBrowserCredential = false }));
+        new DefaultAzureCredential(new DefaultAzureCredentialOptions() { ExcludeManagedIdentityCredential = true }));
 
     return dataLakeServiceClient;
 }
 
-Stream CreateOneLakeFile(string endpopint, string workspaceName, string folder, string filename)
+
+DataLakeFileClient CreateOneLakeFileClient(string endpopint, string workspaceName, string folder, string filename)
 {
     var dataLakeServiceClient = GetDataLakeServiceClient(endpopint);
     var dataLakeFileSystemClient = dataLakeServiceClient.GetFileSystemClient(workspaceName);
     var dirClient = dataLakeFileSystemClient.GetDirectoryClient(folder);
     var fileClient = dirClient.GetFileClient(filename);
-    var file = fileClient.OpenWrite(overwrite:true);
-    return file;
+    return fileClient;
 }
 
 static async Task WriteDatareaderToParquet(System.Data.IDataReader rdr, Stream file,  int rowGroupSize)
@@ -140,6 +155,5 @@ static async Task WriteDatareaderToParquet(System.Data.IDataReader rdr, Stream f
     writer.Dispose();
 
     file.Flush();
-    file.Close();
-    
+   
 }
