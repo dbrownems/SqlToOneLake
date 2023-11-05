@@ -21,7 +21,7 @@ var endpopint = $"https://msit-onelake.dfs.fabric.microsoft.com/";
 var workspaceName = "dbrowne_Trident";
 var folder = "/LH.lakehouse/Files/test";
 var filename = "test.5m.parquet";
-var tempFolder = @"d:\temp\";
+string tempFolder = null;// @"c:\temp\";
 var rowGroupSize = 500000;
 
 
@@ -41,8 +41,10 @@ var fc = CreateOneLakeFileClient(endpopint, workspaceName, folder, filename);
 await fc.DeleteIfExistsAsync();
 
 Console.WriteLine($"Copying {tempFile.Position / 1024 / 1024}MB to OneLake file {DateTime.Now}");
-var opts = new DataLakeFileUploadOptions() { TransferOptions = new StorageTransferOptions { MaximumConcurrency = 8 } };
+
 tempFile.Position = 0;
+
+var opts = new DataLakeFileUploadOptions() { ProgressHandler=new ProgressHandler(),  TransferOptions = new StorageTransferOptions { MaximumConcurrency = 8, InitialTransferSize=1024*1024*4 } };
 await fc.UploadAsync(tempFile, options: opts);
 Console.WriteLine($"Copied {tempFile.Position / 1024 / 1024}MB to OneLake file {DateTime.Now}");
 
@@ -123,7 +125,7 @@ static async Task WriteDatareaderToParquet(System.Data.IDataReader rdr, Stream f
             using var rgw = writer.CreateRowGroup();
             foreach (var c in columns)
             {
-                Console.WriteLine($"Writing {c.Field.Name}");
+                //Console.WriteLine($"Writing {c.Field.Name}");
                 await rgw.WriteColumnAsync(c);
             }
             Console.WriteLine($"Completed {rc} rows. {DateTime.Now}");
@@ -156,4 +158,12 @@ static async Task WriteDatareaderToParquet(System.Data.IDataReader rdr, Stream f
 
     file.Flush();
    
+}
+
+class ProgressHandler : IProgress<long>
+{
+    public void Report(long value)
+    {
+        Console.WriteLine($"Copied {value / 1024 / 1024}MB to OneLake file {DateTime.Now}");
+    }
 }
