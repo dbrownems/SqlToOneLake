@@ -8,9 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Storage.Files.DataLake" Version="12.16.0" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.2" />
-    <PackageReference Include="Parquet.Net" Version="4.16.4" />
+    <PackageReference Include="Azure.Storage.Files.DataLake" Version="12.17.1" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.1.5" />
+    <PackageReference Include="Parquet.Net" Version="4.23.4" />
   </ItemGroup>
 
 </Project>
